@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MusicNotes</title>
+<meta name="description" content="Upload a video of yourself playing. MusicNotes finds your instrument, maps its frets or keys, and draws the notes, chords and hits on top.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+      <path d="M30 34V8c6 2 11 6 10 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="21" cy="35" rx="11" ry="8.5" transform="rotate(-20 21 35)" fill="var(--accent)" stroke="currentColor" stroke-width="3.5"/>
+      <circle cx="17" cy="35" r="1.9" fill="currentColor"/><circle cx="24" cy="33" r="1.9" fill="currentColor"/>
+      <path d="M18.5 39.2c1.6 1.1 3.6.6 4.6-.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <h1>MusicNotes</h1>
+      <p class="tag">Upload yourself playing. We find the instrument and draw the music on it.</p>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <form class="setup" id="setup">
+    <section class="card">
+      <h2><span class="num">1</span>Your video</h2>
+      <label class="drop" id="drop" for="file">
+        <input type="file" id="file" name="file" accept="video/*" hidden>
+        <video id="preview" muted playsinline hidden></video>
+        <span class="drop-empty" id="dropEmpty">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-5 5m5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <strong>Drop a video here or choose one</strong>
+          <span>Guitar, piano, keyboard, drums or a melody instrument. Up to 5 minutes. Keep the whole instrument in frame.</span>
+        </span>
+      </label>
+      <p class="filename" id="filename" hidden></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">2</span>Effects</h2>
+      <div class="field">
+        <span class="label">Instrument</span>
+        <div class="seg" role="radiogroup" aria-label="Instrument">
+          <input type="radio" name="instrument" id="i-auto" value="auto" checked><label for="i-auto">Detect it</label>
+          <input type="radio" name="instrument" id="i-guitar" value="guitar"><label for="i-guitar">Guitar</label>
+          <input type="radio" name="instrument" id="i-piano" value="piano"><label for="i-piano">Piano</label>
+          <input type="radio" name="instrument" id="i-drums" value="drums"><label for="i-drums">Drums</label>
+          <input type="radio" name="instrument" id="i-melody" value="melody"><label for="i-melody">Melody</label>
+        </div>
+      </div>
+      <div class="toggles">
+        <label class="tog"><input type="checkbox" name="tutorial" id="o-tutorial" checked><span class="sw"></span><span>Tutorial highlights<small>Chord shapes on your frets, lit keys, flashing drums</small></span></label>
+        <label class="tog"><input type="checkbox" name="notes" id="o-notes" checked><span class="sw"></span><span>Flying notes<small>Little note characters rising from where you play</small></span></label>
+        <label class="tog"><input type="checkbox" name="chord_card" id="o-card" checked><span class="sw"></span><span>Chord card<small>Name and diagram of the current chord</small></span></label>
+        <label class="tog"><input type="checkbox" name="timeline" id="o-timeline" checked><span class="sw"></span><span>Chord timeline<small>Current and upcoming chords along the bottom</small></span></label>
+        <label class="tog"><input type="checkbox" name="cute" id="o-cute" checked><span class="sw"></span><span>Faces and sparkles</span></label>
+        <label class="tog"><input type="checkbox" name="shake" id="o-shake" checked><span class="sw"></span><span>Kick drum shake</span></label>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <span class="label">Instrument outline</span>
+          <div class="seg seg-sm" role="radiogroup" aria-label="Outline">
+            <input type="radio" name="outline" id="ol-neon" value="neon" checked><label for="ol-neon">Neon</label>
+            <input type="radio" name="outline" id="ol-dashed" value="dashed"><label for="ol-dashed">Dashed</label>
+            <input type="radio" name="outline" id="ol-off" value=""><label for="ol-off">Off</label>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Note names</span>
+          <div class="seg seg-sm" role="radiogroup" aria-label="Note names">
+            <input type="radio" name="labels" id="l-letter" value="letter" checked><label for="l-letter">A</label>
+            <input type="radio" name="labels" id="l-octave" value="octave"><label for="l-octave">A4</label>
+            <input type="radio" name="labels" id="l-solfege" value="solfege"><label for="l-solfege">La</label>
+            <input type="radio" name="labels" id="l-off" value=""><label for="l-off">Off</label>
+          </div>
+        </div>
+      </div>
+      <div class="row2">
+        <label class="field" for="quality">
+          <span class="label">Output size</span>
+          <select id="quality" name="quality">
+            <option value="720">720p (faster)</option>
+            <option value="1280" selected>1280 px</option>
+            <option value="1920">1080p (slower)</option>
+          </select>
+        </label>
+        <label class="field" for="sensitivity">
+          <span class="label">Sensitivity</span>
+          <input type="range" id="sensitivity" name="sensitivity" min="0" max="1" step="0.05" value="0.5">
+        </label>
+      </div>
+      <button class="btn btn-primary" type="submit" id="start" disabled>Make my video</button>
+      <p class="error" id="formError" role="alert" hidden></p>
+    </section>
+  </form>
+
+  <section class="card result" id="result" aria-live="polite">
+    <h2><span class="num">3</span>Result</h2>
+    <div class="empty" id="resultEmpty">
+      <p>Your video appears here with the effects drawn in. It usually takes two to four times the length of the clip.</p>
+      <ul class="steps-preview">
+        <li><b>Listen.</b> Notes, chords, beats and drum hits from the sound.</li>
+        <li><b>Look.</b> Finds the instrument, then maps the guitar's frets, the piano's keys or the drum kit.</li>
+        <li><b>Draw.</b> Puts the effects on the instrument, frame by frame, and keeps your audio.</li>
+      </ul>
+    </div>
+    <div class="progress" id="progress" hidden>
+      <ol class="stages" id="stages">
+        <li data-stage="upload">Uploading</li>
+        <li data-stage="listen">Listening</li>
+        <li data-stage="look">Finding the instrument</li>
+        <li data-stage="render">Drawing the effects</li>
+      </ol>
+      <div class="bar"><span id="bar"></span></div>
+      <p class="status" id="status">Uploading…</p>
+    </div>
+    <div class="done" id="done" hidden>
+      <video id="output" controls playsinline></video>
+      <div class="actions">
+        <a class="btn btn-primary" id="download" href="#">Download MP4</a>
+        <button class="btn" type="button" id="again">Make another</button>
+      </div>
+      <dl class="facts" id="facts"></dl>
+      <div class="chips" id="chips"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="how">
+  <h2>How it works</h2>
+  <p>No generative AI is involved, and nothing is invented. The sound is analysed with classic signal processing: onsets, pitches by harmonic summation, chords by template matching with Viterbi smoothing, and drum hits by frequency band. The picture is analysed with a YOLOv8 detector trained on Open Images (it knows guitars, pianos, keyboards, drums, violins and more) and a pose model for your hands. The app then fits the fret-spacing law to the guitar neck, or finds the black-key pattern on the keyboard. The effects are drawn on top of your real video.</p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

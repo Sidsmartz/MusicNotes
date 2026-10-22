@@ -1,0 +1,12 @@
+numpy>=1.26
+scipy>=1.11
+librosa>=0.10
+soundfile>=0.12
+opencv-python-headless>=4.9
+onnxruntime>=1.17
+onnx>=1.15
+pycairo>=1.25
+pillow>=10
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
