@@ -47,7 +47,8 @@ video ──► audio ──► onsets, beats, notes, chords, drum hits ──�
 **Looking** (`musicnotes/vision/`):
 - **Instrument detection:** a YOLOv8 detector trained on Open Images V7. It knows guitars, banjos, pianos, keyboards, organs, drums, violins, cellos, saxophones, trumpets, flutes and more. The instrument seen most consistently over the video is chosen; your choice in the app overrides it.
 - **Hands:** YOLOv8-pose finds the player's wrists.
-- **Guitar neck:** the dominant direction of long straight lines (strings and neck edges) gives the neck's axis. The narrow end of the instrument is the neck. The app then fits the fret law, fret *n* at `scale × (1 − 2^(−n/12))` from the nut, to the edges across the neck. The fit rewards a strong edge at the nut and penalises fret-like edges beyond it. When the frets are not clear, typical guitar proportions are used instead.
+- **Guitar neck:** the dominant direction of long straight lines (strings and neck edges) gives the neck's axis. The narrow end of the instrument is the neck. The app then fits the fret law, fret *n* at `scale × (1 − 2^(−n/12))` from the nut, to the edges across the neck. The fit rewards a strong edge at the nut (and the change in wood where the fretboard meets the headstock), and penalises fret-like edges beyond it. If only part of the neck is in view, it fits a close-up instead: the fret law is tried both ways round, because frets get closer together towards the body, which tells it which end is the headstock. The close-up fit wins only when it explains the fret edges clearly better (F1 of predicted frets against edges). The nut may also be out of frame. When the frets are not clear at all, typical guitar proportions are used instead.
+- **Several views:** split-screen tutorials (say, a close-up of the fretting hand above a shot of the strumming hand) are tracked as separate views of the same guitar, and each gets its own overlay.
 - **Keyboard:** a morphological closing isolates the black keys. A line fit with outlier rejection finds the row they sit in. The short/long gap pattern (C# D# · F# G# A# ·) names each black key, and a 1-D perspective fit places every key, black and white. The octave is chosen so the notes being played land under the player's hands.
 - **Drum kit:** drum boxes collected over the whole video are clustered, and the pieces are named kick, snare or hi-hat by their layout.
 - **Smoothing:** all geometry is smoothed over time with outlier rejection, so one bad frame does not make the overlay jump.
@@ -60,11 +61,17 @@ video ──► audio ──► onsets, beats, notes, chords, drum hits ──�
 
 | | Photos | Instrument found (IoU ≥ 0.5) | Geometry |
 | --- | --- | --- | --- |
-| Guitars, ukuleles, banjos, basses | 40 | 37 | neck found on 36; frets fitted from the image on 20, typical proportions on the rest. By eye, about 5 in 6 overlays sit on the actual neck |
+| Guitars, ukuleles, banjos, basses | 40 | 37 | neck found on 36; frets fitted from the image on 35. By eye, about 5 in 6 overlays sit on the actual neck |
 | Pianos, keyboards, organs | 40 | 36 | keys mapped on 14 (many photos show closed lids, distant grands, organs or harpsichords) |
 | Drum kits | 27 | 19 | n/a |
 
 These are single photos. A video is analysed over many frames and smoothed, which is more forgiving.
+
+**On a real video** (an 8.8 s split-screen "Beginner G" guitar lesson, 1080×1350 at 60 fps):
+- **Audio:** it heard exactly one chord, G, matching the lesson.
+- **Close-up panel:** it mapped the neck with the nut on the real nut, and the G shape's dots landed behind the right fret wires.
+- **Body panel:** the overlay runs along the visible part of the neck.
+- **Speed:** processing took about 1–3 minutes on 4 CPU cores.
 
 The tests (`pytest`) cover audio analysis on synthesised guitar, piano and drum clips with known content, and neck and keyboard geometry on drawings with exactly known frets and keys. They also run the whole pipeline end to end and exercise the web API.
 

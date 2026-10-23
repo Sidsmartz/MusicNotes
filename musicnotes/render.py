@@ -231,6 +231,10 @@ class Overlay:
         self.chord_t = np.array([c.t0 for c in events.chords])
         self.drum_t = np.array([d.t for d in events.drums])
         self.kick_t = np.array([d.t for d in events.drums if d.kind == "kick"])
+        # Every view of the guitar with a neck gets the fretboard overlay; notes fly
+        # out of the view whose frets were found most reliably.
+        self.guitar_views = [v for v in [vision, *vision.views] if v.neck is not None] if self.mode == "guitar" else []
+        self.primary = max(self.guitar_views, key=lambda v: v.neck_fitted) if self.guitar_views else vision
         self._place_guitar_notes()
 
     # -- helpers --
@@ -258,7 +262,7 @@ class Overlay:
                 near = p[1]
 
     def neck(self, t) -> NeckModel | None:
-        return self.vr.neck_at(t) if self.mode == "guitar" else None
+        return self.primary.neck_at(t) if self.mode == "guitar" else None
 
     # -- frame --
     def draw(self, frame: np.ndarray, t: float) -> np.ndarray:
@@ -314,10 +318,13 @@ class Overlay:
 
     # -- guitar --
     def _guitar(self, ctx, t):
-        nm = self.neck(t)
-        if nm is None:
+        if not self.guitar_views:
             self._box_outline(ctx, t)
             return
+        for view in self.guitar_views:
+            self._guitar_view(ctx, t, view.neck_at(t))
+
+    def _guitar_view(self, ctx, t, nm: NeckModel):
         u = self.u
         P = lambda uu, vv: nm.point(uu, vv)
         d_on = self._since_onset(t)
@@ -666,7 +673,7 @@ class Overlay:
         guitar = self.mode == "guitar"
         shape = theory.guitar_shape(c.label) if guitar else None
         cw, ch = 168 * u, (226 if guitar else 172) * u
-        x, y = 24 * u, 24 * u
+        x, y = self._card_corner(c.t0, cw, ch)
         rgb = theory.note_rgb(c.label.root, 0.58)
         if self.o.cute and age < 0.9:
             e = 1 - (1 - age / 0.9) ** 3
@@ -692,6 +699,24 @@ class Overlay:
         elif not guitar:
             self._mini_keys(ctx, 16 * u, 104 * u, cw - 32 * u, 52 * u, c.label)
         ctx.restore()
+
+    def _card_corner(self, t, cw, ch):
+        """The corner where the chord card covers the least of the fretboard
+        (top-left unless that hides the neck). Fixed per chord, so it does not jump."""
+        m = 24 * self.u
+        corners = [(m, m), (self.W - cw - m, m), (m, self.H - ch - m - 60 * self.u), (self.W - cw - m, self.H - ch - m - 60 * self.u)]
+        if not self.guitar_views:
+            return corners[0]
+        pts = []
+        for v in self.guitar_views:
+            nm = v.neck_at(t)
+            pts += [nm.point(a, b) for a in np.linspace(-0.1, fret_u(12), 14) for b in (0.0, 0.5, 1.0)]
+        pts = np.array(pts)
+
+        def covered(xy):
+            x0, y0 = xy
+            return int(np.sum((pts[:, 0] >= x0) & (pts[:, 0] <= x0 + cw) & (pts[:, 1] >= y0) & (pts[:, 1] <= y0 + ch)))
+        return min(corners, key=lambda xy: (covered(xy), corners.index(xy)))
 
     def _mini_fretboard(self, ctx, cx, top, w, h, shape, rgb):
         u = self.u

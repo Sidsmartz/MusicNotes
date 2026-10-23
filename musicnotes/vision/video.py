@@ -36,6 +36,8 @@ class VisionResult:
     keyboard_time: float = 0.0
     drums: list[DrumPiece] = field(default_factory=list)
     wrists: list[np.ndarray] = field(default_factory=list)  # per sample, (k, 2)
+    # Other views of the same instrument, e.g. the panels of a split-screen tutorial.
+    views: list["VisionResult"] = field(default_factory=list)
 
     def _interp(self, arr: np.ndarray, t: float) -> np.ndarray:
         if len(self.times) == 1:
@@ -115,18 +117,18 @@ def analyze_video(path: str, info: media.VideoInfo, forced_kind: str | None = No
 
     # One pass over sampled frames. Geometry is estimated on the spot for any
     # guitar or keyboard in view, so frames need not be kept in memory.
-    dets, people, necks, keyboards = [], [], [], []
-    prev_guitar = None
+    dets, people, guitars, keyboards = [], [], [], []
     for i, frame in enumerate(media.FrameReader(path, size, fps)):
         ds, ps = detector(frame), pose(frame)
         dets.append(ds)
         people.append(ps)
-        g = _pick_box(ds, "guitar", prev_guitar) if forced_kind in (None, "guitar") else None
-        nm = None
-        if g is not None:
-            prev_guitar = g.box
-            nm = estimate_neck(frame, g.box, list(_wrists(ps)))
-        necks.append(nm)
+        # Every guitar in view gets a neck estimate: split-screen videos show the
+        # same guitar more than once (say, a close-up of the fretting hand).
+        found = []
+        if forced_kind in (None, "guitar"):
+            for g in sorted((d for d in ds if d.kind == "guitar"), key=lambda d: -d.score)[:3]:
+                found.append((g, estimate_neck(frame, g.box, list(_wrists(ps)))))
+        guitars.append(found)
         k = _pick_box(ds, "piano", None) if forced_kind in (None, "piano") else None
         if k is not None and (len(keyboards) < 4 or i % 3 == 0):
             km = estimate_keyboard(frame, k.box)
@@ -154,6 +156,16 @@ def analyze_video(path: str, info: media.VideoInfo, forced_kind: str | None = No
         return VisionResult(size, None, "", 0.0, 0.0, times=times, wrists=[_wrists(p) for p in people])
     label = max(labels.get(kind, {"": 1}).items(), key=lambda kv: kv[1])[0]
 
+    wrists = [_wrists(p) for p in people]
+    if kind == "guitar":
+        views = _guitar_views(guitars, times, size, label, wrists)
+        if not views:
+            return VisionResult(size, kind if forced_kind else None, label, 0.0, 0.0, times=times, wrists=wrists)
+        report(1.0, "Instrument found")
+        main, *rest = views
+        main.views = rest
+        return main
+
     boxes = np.zeros((len(frames), 4))
     valid = np.zeros(len(frames), bool)
     conf = []
@@ -165,32 +177,11 @@ def analyze_video(path: str, info: media.VideoInfo, forced_kind: str | None = No
             conf.append(d.score)
     coverage = float(valid.mean())
     if not valid.any():
-        return VisionResult(size, kind if forced_kind else None, label, 0.0, 0.0, times=times, wrists=[_wrists(p) for p in people])
+        return VisionResult(size, kind if forced_kind else None, label, 0.0, 0.0, times=times, wrists=wrists)
     boxes = _fill_and_smooth(boxes, valid)
-    result = VisionResult(size, kind, label, float(np.mean(conf)), coverage, times, boxes, wrists=[_wrists(p) for p in people])
+    result = VisionResult(size, kind, label, float(np.mean(conf)), coverage, times, boxes, wrists=wrists)
 
-    if kind == "guitar":
-        params = np.zeros((len(frames), 9))
-        ok = np.zeros(len(frames), bool)
-        fitted = 0
-        for i, nm in enumerate(necks):
-            if nm is not None and valid[i]:
-                params[i], ok[i] = nm.as_array(), True
-                fitted += nm.frets_fitted
-        if ok.any():
-            # Reject samples whose neck points the other way or has an odd length.
-            vec = params[ok, 2:4] - params[ok, 0:2]
-            ref = np.median(vec, 0)
-            length = np.linalg.norm(vec, axis=1)
-            good = (vec @ ref > 0) & (np.abs(length / np.median(length) - 1) < 0.35)
-            ok[np.where(ok)[0][~good]] = False
-        if ok.any():
-            # Keep the low-E side consistent.
-            side = np.median(params[ok, 6:8], 0)
-            params[ok & (params[:, 6:8] @ side < 0), 6:8] *= -1
-            result.neck = _fill_and_smooth(params, ok, window=7)
-            result.neck_fitted = fitted / max(1, ok.sum())
-    elif kind == "piano":
+    if kind == "piano":
         if keyboards:
             km, t = max(keyboards, key=lambda kt: kt[0].confidence * (kt[0].w_max - kt[0].w_min) * np.sqrt(kt[0].key_size()))
             result.keyboard, result.keyboard_time = km, t
@@ -198,6 +189,60 @@ def analyze_video(path: str, info: media.VideoInfo, forced_kind: str | None = No
         result.drums = kit_layout([[d.box for d in ds if d.kind == "drums"] for ds in dets], size)
     report(1.0, "Instrument found")
     return result
+
+
+def _iou(a, b):
+    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    i = ix * iy
+    return i / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - i + 1e-9)
+
+
+def _guitar_views(guitars, times, size, label, wrists) -> list[VisionResult]:
+    """Groups guitar detections into tracks (one per view of the guitar), and
+    smooths each track's box and neck. The main view comes first."""
+    n = len(guitars)
+    tracks: list[dict] = []
+    for i, found in enumerate(guitars):
+        used = set()
+        for det, nm in found:
+            best = max((t for t in tracks if id(t) not in used), key=lambda t: _iou(t["last"], det.box), default=None)
+            if best is None or _iou(best["last"], det.box) < 0.3:
+                best = {"items": {}, "last": det.box, "weight": 0.0}
+                tracks.append(best)
+            used.add(id(best))
+            best["items"][i] = (det, nm)
+            best["last"] = det.box
+            best["weight"] += det.score * np.sqrt(det.area)
+    views = []
+    for tr in sorted(tracks, key=lambda t: -t["weight"]):
+        if len(tr["items"]) < max(2, 0.4 * n):
+            continue
+        boxes, valid = np.zeros((n, 4)), np.zeros(n, bool)
+        params, ok = np.zeros((n, 9)), np.zeros(n, bool)
+        fitted = 0
+        for i, (det, nm) in tr["items"].items():
+            boxes[i], valid[i] = det.box, True
+            if nm is not None:
+                params[i], ok[i] = nm.as_array(), True
+                fitted += bool(nm.frets_fitted)
+        vr = VisionResult(size, "guitar", label, float(np.mean([d.score for d, _ in tr["items"].values()])), float(valid.mean()),
+                          times, _fill_and_smooth(boxes, valid), wrists=wrists)
+        if ok.any():
+            # Reject samples whose neck points the other way or has an odd length.
+            vec = params[ok, 2:4] - params[ok, 0:2]
+            ref = np.median(vec, 0)
+            length = np.linalg.norm(vec, axis=1)
+            good = (vec @ ref > 0) & (np.abs(length / np.median(length) - 1) < 0.35)
+            ok[np.where(ok)[0][~good]] = False
+        if ok.sum() >= max(2, 0.3 * len(tr["items"])):
+            # Keep the low-E side consistent.
+            side = np.median(params[ok, 6:8], 0)
+            params[ok & (params[:, 6:8] @ side < 0), 6:8] *= -1
+            vr.neck = _fill_and_smooth(params, ok, window=7)
+            vr.neck_fitted = fitted / max(1, len(tr["items"]))
+        views.append(vr)
+    return views
 
 
 def _wrists(people) -> np.ndarray:
